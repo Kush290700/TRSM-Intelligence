@@ -21,26 +21,19 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────────────────────────────────────
 # ENGINE CREATION (uses pymssql)
 # ──────────────────────────────────────────────────────────────────────────────
+
 @lru_cache(maxsize=1)
 def get_engine():
-    """
-    Create a SQLAlchemy engine using the pymssql driver.
-    Expects DB_SERVER, DB_NAME, DB_USER, DB_PASS in the environment.
-    """
-    server   = os.getenv("DB_SERVER")
-    database = os.getenv("DB_NAME")
-    user     = os.getenv("DB_USER")
-    pwd      = os.getenv("DB_PASS")
-    if not all([server, database, user, pwd]):
-        raise RuntimeError("Database credentials not set in environment variables")
-    # pymssql default port is 1433
-    conn_str = f"mssql+pymssql://{user}:{pwd}@{server}:1433/{database}"
+    server   = os.getenv("DB_SERVER", "10.4.21.5")
+    database = os.getenv("DB_NAME",   "TRSM")
+    user     = os.getenv("DB_USER",   "TRSMAna")
+    pwd      = os.getenv("DB_PASS",   "chattypostgraduatecanary")
+    # pymssql URL does not need an external ODBC driver
+    conn_str = f"mssql+pymssql://{user}:{pwd}@{server}/{database}"
     return create_engine(
         conn_str,
-        fast_executemany=True,
+        # you can still pass pooling args if you like
         pool_pre_ping=True,
-        pool_size=10,
-        max_overflow=20
     )
 
 # ──────────────────────────────────────────────────────────────────────────────
