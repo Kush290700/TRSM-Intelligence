@@ -1,5 +1,6 @@
 # core app
 streamlit>=1.20.0
+streamlit-plotly-events==0.0.6
 
 # data & viz
 pandas>=2.0.0
