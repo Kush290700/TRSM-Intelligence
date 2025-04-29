@@ -14,7 +14,6 @@ prophet>=1.1.0
 # database
 SQLAlchemy>=2.0.0
 pymssql>=2.2.7
-pyodbc>=5.1.0
 
 # misc
 requests>=2.28.0
