@@ -4,13 +4,12 @@ import os
 import datetime
 import logging
 from functools import lru_cache
+
 import pandas as pd
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Logging
-# ──────────────────────────────────────────────────────────────────────────────
+# ─── Logging setup ─────────────────────────────────────────────────────────────
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
     level=LOG_LEVEL,
@@ -18,36 +17,37 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ──────────────────────────────────────────────────────────────────────────────
-# ENGINE CREATION (uses pymssql)
-# ──────────────────────────────────────────────────────────────────────────────
-
+# ─── Engine factory ────────────────────────────────────────────────────────────
 @lru_cache(maxsize=1)
 def get_engine():
+    """
+    Returns a SQLAlchemy engine using the pymssql driver,
+    which can be installed via pip (`pymssql`) without any OS-level ODBC deps.
+    """
     server   = os.getenv("DB_SERVER", "10.4.21.5")
     database = os.getenv("DB_NAME",   "TRSM")
     user     = os.getenv("DB_USER",   "TRSMAna")
     pwd      = os.getenv("DB_PASS",   "chattypostgraduatecanary")
-    # pymssql URL does not need an external ODBC driver
+
+    # pymssql URL schema — no external ODBC driver required
     conn_str = f"mssql+pymssql://{user}:{pwd}@{server}/{database}"
+
     return create_engine(
         conn_str,
-        # you can still pass pooling args if you like
         pool_pre_ping=True,
+        pool_size=5,
+        max_overflow=10,
     )
 
-# ──────────────────────────────────────────────────────────────────────────────
-# DATA FETCHING
-# ──────────────────────────────────────────────────────────────────────────────
+# ─── Data fetcher ──────────────────────────────────────────────────────────────
 @lru_cache(maxsize=32)
 def fetch_raw_tables(start_date: str = "2020-01-01", end_date: str = None) -> dict:
     """
-    Pulls all upstream tables into pandas DataFrames.
-    Returns a dict of DataFrames keyed by table name.
+    Pulls all raw tables from the TRSM database between start_date and end_date.
+    Caches up to 32 distinct (start,end) parameter pairs.
     """
     if end_date is None:
         end_date = datetime.datetime.now().strftime("%Y-%m-%d")
-
     engine = get_engine()
     params = {"start": start_date, "end": end_date}
     raw = {}
@@ -59,7 +59,7 @@ def fetch_raw_tables(start_date: str = "2020-01-01", end_date: str = None) -> di
                    DateExpected, DateShipped AS ShipDate,
                    ShippingMethodRequested
               FROM dbo.Orders
-             WHERE OrderStatus = 'packed'
+             WHERE OrderStatus='packed'
                AND CreatedAt BETWEEN :start AND :end
         """),
         "order_lines": text("""
@@ -75,8 +75,8 @@ def fetch_raw_tables(start_date: str = "2020-01-01", end_date: str = None) -> di
         """),
         "products": text("""
             SELECT ProductId, SKU, Description AS ProductName,
-                   UnitOfBillingId, SupplierId, ListPrice AS ProductListPrice,
-                   CostPrice
+                   UnitOfBillingId, SupplierId,
+                   ListPrice AS ProductListPrice, CostPrice
               FROM dbo.Products
         """),
         "regions": text("""
@@ -110,9 +110,8 @@ def fetch_raw_tables(start_date: str = "2020-01-01", end_date: str = None) -> di
 
     for name, qry in queries.items():
         try:
-            df = pd.read_sql(qry, engine, params=params)
-            raw[name] = df
-            logger.debug(f"Fetched '{name}' ({len(df):,} rows)")
+            raw[name] = pd.read_sql(qry, engine, params=params)
+            logger.debug(f"Fetched '{name}': {len(raw[name])} rows")
         except SQLAlchemyError as e:
             logger.error(f"Error fetching '{name}': {e}")
             raw[name] = pd.DataFrame()
